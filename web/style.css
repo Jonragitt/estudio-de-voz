@@ -164,3 +164,4 @@ input[type=range]{width:100%;accent-color:var(--tint)}
 .icon-btn{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--fg2)}
 .icon-btn:hover{background:color-mix(in srgb,var(--fg) 7%,transparent)}
 .row-btns{display:flex;gap:10px;flex-wrap:wrap}
+.settings .btn{align-self:flex-start}

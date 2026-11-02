@@ -84,15 +84,18 @@ $('#voice-grid').onclick = async (e) => {
 };
 
 /* ajustes */
-const sliders = { speed: ['#o-speed', (v) => (+v).toFixed(1) + '×'], exa: ['#o-exa', (v) => (+v).toFixed(2)], cfg: ['#o-cfg', (v) => (+v).toFixed(2)] };
-const defaults = { speed: 1, exa: 0.5, cfg: 0.5 };
+const sliders = { speed: ['#o-speed', (v) => (+v).toFixed(2) + '×'], exa: ['#o-exa', (v) => (+v).toFixed(2)], cfg: ['#o-cfg', (v) => (+v).toFixed(2)], pausa: ['#o-pausa', (v) => (+v).toFixed(1) + '×'] };
+const defaults = { speed: 1, exa: 0.5, cfg: 0.5, pausa: 1 };
+const calma = { speed: 0.95, exa: 0.35, cfg: 0.3, pausa: 1.4 };
 const saved = store.get('ajustes', defaults);
 for (const [id, [out, fmt]] of Object.entries(sliders)) {
   const el = $('#' + id); el.value = saved[id] ?? defaults[id];
-  const upd = () => { $(out).textContent = fmt(el.value); store.set('ajustes', { speed: +$('#speed').value, exa: +$('#exa').value, cfg: +$('#cfg').value }); };
+  const upd = () => { $(out).textContent = fmt(el.value); store.set('ajustes', { speed: +$('#speed').value, exa: +$('#exa').value, cfg: +$('#cfg').value, pausa: +$('#pausa').value }); };
   el.oninput = upd; upd();
 }
-$('#reset').onclick = () => { for (const id in defaults) { $('#' + id).value = defaults[id]; $('#' + id).oninput(); } };
+const applySet = (set) => { for (const id in set) { $('#' + id).value = set[id]; $('#' + id).oninput(); } };
+$('#reset').onclick = () => applySet(defaults);
+$('#preset-calma').onclick = () => { applySet(calma); toast('Ajustes de narrador pausado'); };
 
 /* texto a voz */
 const text = $('#text');
@@ -115,7 +118,7 @@ $('#gen').onclick = async () => {
   try {
     const item = await api('/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.value, voice_id: $('#voice').value, speed: +$('#speed').value, exaggeration: +$('#exa').value, cfg: +$('#cfg').value, language: $('#lang').value }),
+      body: JSON.stringify({ text: text.value, voice_id: $('#voice').value, speed: +$('#speed').value, exaggeration: +$('#exa').value, cfg: +$('#cfg').value, pausa: +$('#pausa').value, language: $('#lang').value }),
     });
     play(item);
   } catch (e) { toast(e.message); }

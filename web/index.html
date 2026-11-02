@@ -42,7 +42,9 @@
         <label class="field"><span>Idioma</span><select id="lang"><option value="es">Español</option></select></label>
         <label class="field"><span>Velocidad <output id="o-speed">1.0×</output></span><input type="range" id="speed" min="0.5" max="2" step="0.05" value="1"></label>
         <label class="field"><span>Expresividad <output id="o-exa">0.50</output></span><input type="range" id="exa" min="0" max="1" step="0.05" value="0.5"></label>
-        <label class="field"><span>Fidelidad al texto <output id="o-cfg">0.50</output></span><input type="range" id="cfg" min="0" max="1" step="0.05" value="0.5"></label>
+        <label class="field"><span>Ritmo del modelo <output id="o-cfg">0.50</output></span><input type="range" id="cfg" min="0" max="1" step="0.05" value="0.5"><small class="hint">Más bajo = más pausado y tranquilo.</small></label>
+        <label class="field"><span>Pausas entre frases <output id="o-pausa">1.0×</output></span><input type="range" id="pausa" min="0.5" max="2.5" step="0.1" value="1"></label>
+        <button class="btn" id="preset-calma" type="button">Narrador pausado</button>
         <button class="link" id="reset">Restablecer ajustes</button>
       </aside>
     </div>

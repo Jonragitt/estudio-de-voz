@@ -65,6 +65,7 @@ class TTSRequest(BaseModel):
     exaggeration: float = Field(0.5, ge=0.0, le=1.0)
     cfg: float = Field(0.5, ge=0.0, le=1.0)
     language: str = "es"
+    pausa: float = Field(1.0, ge=0.3, le=3.0)
 
 
 @app.get("/api/estado")
@@ -192,7 +193,7 @@ def tts(req: TTSRequest):
     leido = normalizar(req.text, req.language, pronunciaciones_actuales())
     t0 = time.time()
     with gen_lock:
-        wav = get_engine().synthesize(leido, refs or None, req.speed, req.exaggeration, req.cfg, req.language)
+        wav = get_engine().synthesize(leido, refs or None, req.speed, req.exaggeration, req.cfg, req.language, req.pausa)
     aid = uuid.uuid4().hex[:12]
     (AUDIO / f"{aid}.wav").write_bytes(wav)
     item = {"id": aid, "text": req.text, "voice_id": voice["id"], "voice_name": voice["name"],

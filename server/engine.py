@@ -23,26 +23,65 @@ LANGUAGES = {
 
 
 def split_text(text: str, limit: int = 280) -> list[str]:
-    """Trocea el texto en frases de como mucho `limit` caracteres (el modelo genera unos 40 s por trozo)."""
-    sentences = re.split(r"(?<=[.!?…;:])\s+|\n+", text.strip())
-    chunks, cur = [], ""
-    for s in filter(None, (x.strip() for x in sentences)):
-        while len(s) > limit:  # frase muy larga: cortar por la última coma o espacio
-            cut = max(s.rfind(",", 0, limit), s.rfind(" ", 0, limit))
-            cut = cut if cut > limit // 3 else limit
-            if cur:
-                chunks.append(cur)
-                cur = ""
-            chunks.append(s[:cut + 1].strip())
-            s = s[cut + 1:].strip()
-        if cur and len(cur) + 1 + len(s) > limit:
-            chunks.append(cur)
-            cur = s
-        else:
-            cur = f"{cur} {s}".strip()
-    if cur:
-        chunks.append(cur)
-    return chunks or [text]
+    """Trocea el texto en trozos de como mucho `limit` caracteres (se usa en el motor demo)."""
+    return [f for f, _ in frases(text, limit)] or [text]
+
+
+PAUSAS = {".": 0.55, "!": 0.55, "?": 0.6, "…": 0.7, ";": 0.4, ":": 0.4, ",": 0.22, "\n": 0.9}
+
+
+def frases(text: str, limit: int = 220) -> list[tuple[str, float]]:
+    """Divide el texto en frases y dice cuánto silencio va después de cada una.
+
+    Generar frase a frase hace que el narrador vaya más pausado y respire entre frases, en lugar de
+    leer de corrido un bloque largo.
+    """
+    out: list[tuple[str, float]] = []
+    for parrafo in [p.strip() for p in re.split(r"\n\s*\n|\n", text.strip()) if p.strip()]:
+        partes = [x.strip() for x in re.split(r"(?<=[.!?…;:])\s+", parrafo) if x.strip()]
+        for i, frase in enumerate(partes):
+            while len(frase) > limit:  # frase muy larga: cortar por la última coma (o espacio)
+                cut = frase.rfind(",", 0, limit)
+                cut = cut if cut > limit // 3 else frase.rfind(" ", 0, limit)
+                cut = cut if cut > limit // 3 else limit
+                out.append((frase[:cut + 1].strip(), PAUSAS[","]))
+                frase = frase[cut + 1:].strip()
+            if frase:
+                fin = frase[-1]
+                out.append((frase, PAUSAS.get(fin, 0.45)))
+        if out:
+            out[-1] = (out[-1][0], PAUSAS["\n"])
+    return out
+
+
+def recortar_silencio(audio, sr: int, umbral: float = 0.01, margen: float = 0.04):
+    """Quita el silencio del principio y del final de un trozo para que las pausas sean las nuestras."""
+    import numpy as np
+    voz = np.where(np.abs(audio) > umbral)[0]
+    if len(voz) == 0:
+        return audio
+    m = int(sr * margen)
+    return audio[max(0, voz[0] - m): min(len(audio), voz[-1] + m)]
+
+
+def cambiar_ritmo(audio, sr: int, velocidad: float):
+    """Cambia la velocidad sin cambiar el tono. Usa ffmpeg (atempo, suena limpio en voz);
+    si no está, usa librosa (puede sonar con eco)."""
+    import numpy as np
+    import shutil
+    if abs(velocidad - 1.0) < 0.02:
+        return audio
+    velocidad = min(max(velocidad, 0.5), 2.0)
+    if shutil.which("ffmpeg"):
+        import subprocess
+        pcm = (np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes()
+        r = subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "s16le", "-ar", str(sr), "-ac", "1", "-i", "pipe:0",
+                            "-filter:a", f"atempo={velocidad:.3f}", "-f", "s16le", "-ar", str(sr), "-ac", "1", "pipe:1"],
+                           input=pcm, capture_output=True)
+        if r.returncode == 0 and r.stdout:
+            return np.frombuffer(r.stdout, dtype="<i2").astype(np.float32) / 32767
+    import librosa
+    return librosa.effects.time_stretch(audio, rate=velocidad)
 
 
 def wav_bytes(samples, rate: int) -> bytes:
@@ -65,7 +104,7 @@ class DemoEngine:
     ready = True
 
     def synthesize(self, text: str, refs: list[Path] | None = None, speed: float = 1.0,
-                   exaggeration: float = 0.5, cfg: float = 0.5, language: str = "es") -> bytes:
+                   exaggeration: float = 0.5, cfg: float = 0.5, language: str = "es", pausa: float = 1.0) -> bytes:
         """Devuelve un WAV con un pitido por palabra, para probar la interfaz."""
         rate = 22050
         words = max(1, len(text.split()))
@@ -116,19 +155,18 @@ class ChatterboxEngine:
         return self.cache[key]
 
     def synthesize(self, text: str, refs: list[Path] | None = None, speed: float = 1.0,
-                   exaggeration: float = 0.5, cfg: float = 0.5, language: str = "es") -> bytes:
+                   exaggeration: float = 0.5, cfg: float = 0.5, language: str = "es", pausa: float = 1.0) -> bytes:
         import numpy as np
 
         self.model.conds = self._conds_for(refs, exaggeration)
-        pause = np.zeros(int(self.sr * 0.25), dtype=np.float32)
         parts = []
-        for chunk in split_text(text):
-            wav = self.model.generate(chunk, language_id=language, exaggeration=exaggeration, cfg_weight=cfg)
-            parts += [wav.squeeze(0).cpu().numpy().astype(np.float32), pause]
-        audio = np.concatenate(parts[:-1]) if parts else pause
-        if abs(speed - 1.0) > 0.01:
-            import librosa
-            audio = librosa.effects.time_stretch(audio, rate=speed)  # cambia el ritmo sin cambiar el tono
+        for frase, silencio in frases(text):
+            wav = self.model.generate(frase, language_id=language, exaggeration=exaggeration, cfg_weight=cfg)
+            voz = recortar_silencio(wav.squeeze(0).cpu().numpy().astype(np.float32), self.sr)
+            voz = cambiar_ritmo(voz, self.sr, speed)
+            # las pausas se alargan cuando el narrador va más lento
+            parts += [voz, np.zeros(int(self.sr * silencio * pausa / max(speed, 0.5)), dtype=np.float32)]
+        audio = np.concatenate(parts[:-1]) if parts else np.zeros(self.sr // 4, dtype=np.float32)
         return wav_bytes(audio, self.sr)
 
 

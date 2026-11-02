@@ -152,3 +152,15 @@ input[type=range]{width:100%;accent-color:var(--tint)}
 .hint{font-weight:400;color:var(--fg3);font-size:13px}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--fg2)}
 .check input{margin-top:3px;accent-color:var(--tint);width:18px;height:18px;flex:none}
+.bar-left{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.leido{padding:16px 20px;margin-top:16px;display:flex;flex-direction:column;gap:8px}
+.leido-head{display:flex;justify-content:space-between;align-items:center}
+.leido p{color:var(--fg);line-height:1.55}
+.pron{max-width:720px}
+.pron-head,.pron-row{display:grid;grid-template-columns:1fr 1.3fr 36px;gap:10px;align-items:center}
+.pron-head{font-size:13px;font-weight:600;color:var(--fg3);padding:0 4px}
+#pron-list{display:flex;flex-direction:column;gap:8px}
+.pron-row input{width:100%;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--glass2);color:var(--fg)}
+.icon-btn{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--fg2)}
+.icon-btn:hover{background:color-mix(in srgb,var(--fg) 7%,transparent)}
+.row-btns{display:flex;gap:10px;flex-wrap:wrap}

@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .engine import LANGUAGES, load_engine
+from .normalizar import PRONUNCIACIONES_INICIALES, normalizar
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.getenv("ESTUDIO_DATOS", ROOT / "datos"))  # en Colab: una carpeta de Google Drive
@@ -26,6 +27,7 @@ for d in (AUDIO, VOICES):
     d.mkdir(parents=True, exist_ok=True)
 HISTORY = DATA / "historial.json"
 VOICES_DB = DATA / "voces.json"
+PRON_DB = DATA / "pronunciaciones.json"
 
 DEFAULT_VOICES = [
     {"id": "base", "name": "Narrador base", "kind": "base", "tags": ["neutra", "español"],
@@ -187,18 +189,50 @@ def tts(req: TTSRequest):
     refs = [VOICES / r for r in voice.get("refs", [voice["ref"]] if voice.get("ref") else [])]
     if req.language not in LANGUAGES:
         raise HTTPException(400, "Ese idioma no está disponible.")
+    leido = normalizar(req.text, req.language, pronunciaciones_actuales())
     t0 = time.time()
     with gen_lock:
-        wav = get_engine().synthesize(req.text, refs or None, req.speed, req.exaggeration, req.cfg, req.language)
+        wav = get_engine().synthesize(leido, refs or None, req.speed, req.exaggeration, req.cfg, req.language)
     aid = uuid.uuid4().hex[:12]
     (AUDIO / f"{aid}.wav").write_bytes(wav)
     item = {"id": aid, "text": req.text, "voice_id": voice["id"], "voice_name": voice["name"],
             "created": int(time.time()), "seconds": round(time.time() - t0, 2), "motor": get_engine().name,
-            "language": req.language}
+            "language": req.language, "leido": leido}
     hist = read_json(HISTORY, [])
     hist.insert(0, item)
     write_json(HISTORY, hist[:500])
     return item
+
+
+def pronunciaciones_actuales() -> list[dict]:
+    return read_json(PRON_DB, PRONUNCIACIONES_INICIALES)
+
+
+class Pronunciacion(BaseModel):
+    palabra: str = Field(min_length=1, max_length=60)
+    lectura: str = Field(min_length=1, max_length=120)
+
+
+@app.get("/api/pronunciaciones")
+def ver_pronunciaciones():
+    return pronunciaciones_actuales()
+
+
+@app.put("/api/pronunciaciones")
+def guardar_pronunciaciones(lista: list[Pronunciacion]):
+    datos = [p.model_dump() for p in lista[:500]]
+    write_json(PRON_DB, datos)
+    return datos
+
+
+class TextoRequest(BaseModel):
+    text: str = Field(max_length=5000)
+    language: str = "es"
+
+
+@app.post("/api/normalizar")
+def ver_normalizado(req: TextoRequest):
+    return {"texto": normalizar(req.text, req.language, pronunciaciones_actuales())}
 
 
 @app.get("/api/historial")

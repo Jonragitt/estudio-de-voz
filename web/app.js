@@ -24,12 +24,13 @@ $('#theme').onclick = () => {
 };
 
 /* navegación */
-$('#tabbar').innerHTML = $$('.nav button').map((b) => `<button data-view="${b.dataset.view}">${b.innerHTML}</button>`).join('');
+$('#tabbar').innerHTML = $$('.nav button').map((b) => `<button data-view="${b.dataset.view}">${b.dataset.short ? b.querySelector('svg').outerHTML + b.dataset.short : b.innerHTML}</button>`).join('');
 const show = (v) => {
   $$('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === v));
   $$('.view').forEach((s) => s.classList.toggle('on', s.id === 'v-' + v));
   if (v === 'voces') loadVoices();
   if (v === 'historial') loadHistory();
+  if (v === 'pronunciaciones') loadPron();
   history.replaceState(null, '', '#' + v);
 };
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) show(b.dataset.view); });
@@ -160,6 +161,35 @@ $('#clone-form').onsubmit = async (e) => {
     await loadVoices(); $('#voice').value = v.id; store.set('voz', v.id); show('voces');
   } catch (err) { status.textContent = ''; toast(err.message); }
   finally { btn.classList.remove('busy'); btn.textContent = 'Crear voz'; }
+};
+
+/* ver cómo lo leerá */
+$('#preview-read').onclick = async () => {
+  if (!text.value.trim()) { toast('Escribe algún texto primero'); return; }
+  try {
+    const r = await api('/normalizar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.value, language: $('#lang').value }) });
+    $('#leido-text').textContent = r.texto; $('#leido').hidden = false;
+  } catch (e) { toast(e.message); }
+};
+$('#leido-close').onclick = () => { $('#leido').hidden = true; };
+
+/* pronunciaciones */
+const pronRow = (p = { palabra: '', lectura: '' }) => {
+  const row = document.createElement('div'); row.className = 'pron-row';
+  row.innerHTML = `<input aria-label="Se escribe" maxlength="60" placeholder="Hokkaido"><input aria-label="Se lee" maxlength="120" placeholder="Jokaido"><button type="button" class="icon-btn danger" aria-label="Quitar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+  const [a, b] = $$('input', row); a.value = p.palabra; b.value = p.lectura;
+  $('button', row).onclick = () => row.remove();
+  return row;
+};
+async function loadPron() {
+  const list = await api('/pronunciaciones');
+  $('#pron-list').replaceChildren(...list.map(pronRow));
+}
+$('#pron-add').onclick = () => { const r = pronRow(); $('#pron-list').append(r); $('input', r).focus(); };
+$('#pron-save').onclick = async () => {
+  const lista = $$('#pron-list .pron-row').map((r) => { const [a, b] = $$('input', r); return { palabra: a.value.trim(), lectura: b.value.trim() }; }).filter((p) => p.palabra && p.lectura);
+  try { await api('/pronunciaciones', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(lista) }); toast('Pronunciaciones guardadas'); loadPron(); }
+  catch (e) { toast(e.message); }
 };
 
 /* historial */

@@ -44,6 +44,11 @@
     const path = url.slice(4), method = (opts.method || 'GET').toUpperCase();
     if (path === '/estado') return ok({ motor: 'vista previa', listo: true });
     if (path === '/idiomas') return ok({ es: 'Español', en: 'Inglés', fr: 'Francés', it: 'Italiano', pt: 'Portugués', de: 'Alemán', ja: 'Japonés' });
+    if (path === '/pronunciaciones') {
+      if (method === 'PUT') mem.pron = JSON.parse(opts.body);
+      return ok(mem.pron || [{ palabra: 'Hokkaido', lectura: 'Jokaido' }, { palabra: 'Meiji', lectura: 'Meiyi' }]);
+    }
+    if (path === '/normalizar') return ok({ texto: JSON.parse(opts.body).text + ' (en la vista previa no se convierte)' });
     if (path === '/voces' && method === 'GET') return ok(mem.voces);
     if (path === '/historial' && method === 'GET') return ok(mem.historial);
     if (path === '/tts') {

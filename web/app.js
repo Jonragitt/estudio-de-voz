@@ -38,6 +38,12 @@ document.addEventListener('click', (e) => { const b = e.target.closest('[data-vi
 api('/estado').then((s) => {
   const el = $('#engine');
   el.textContent = s.motor === 'demo' ? 'Motor demo (sin GPU)' : 'Motor: ' + s.motor;
+  if (s.motor === 'demo') {
+    const n = document.createElement('div');
+    n.className = 'demo-note'; n.setAttribute('role', 'note');
+    n.textContent = 'Modo demo: aquí suenan pitidos de prueba, no una voz. Para la voz de verdad abre el estudio desde Google Colab.';
+    $('.main').prepend(n);
+  }
   el.className = 'engine ' + (s.motor === 'demo' ? 'demo' : 'ok');
 }).catch(() => { $('#engine').textContent = 'Servidor apagado'; });
 

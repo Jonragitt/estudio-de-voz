@@ -144,3 +144,5 @@ input[type=range]{width:100%;accent-color:var(--tint)}
   .tabbar button{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:var(--fg2);padding:6px 4px;border-radius:999px;flex:1}
   .tabbar button.on{color:var(--tint);background:var(--glass2)}
 }
+
+.demo-note{margin:0 0 14px;padding:10px 14px;border-radius:14px;font-size:14px;background:color-mix(in srgb,#F59E0B 16%,transparent);color:var(--fg)}

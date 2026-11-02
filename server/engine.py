@@ -52,7 +52,11 @@ def wav_bytes(samples, rate: int) -> bytes:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(rate)
-        w.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, float(x))) * 32767)) for x in samples))
+        if hasattr(samples, "astype"):  # numpy: rápido para audios largos
+            import numpy as np
+            w.writeframes((np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes())
+        else:
+            w.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, float(x))) * 32767)) for x in samples))
     return buf.getvalue()
 
 

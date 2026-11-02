@@ -484,10 +484,11 @@ def audio_lote(lid: str, leccion: str):
 @app.get("/api/lotes/{lid}/zip")
 def zip_lote(lid: str):
     import zipfile
+    import tempfile
     c = _carpeta_lote(lid)
-    destino = c / f"{c.name}.zip"
+    destino = Path(tempfile.gettempdir()) / f"narraciones-{c.name}.zip"  # fuera de Drive: más rápido
     with zipfile.ZipFile(destino, "w", zipfile.ZIP_STORED) as z:  # los MP3 ya van comprimidos
-        for p in sorted(c.glob("*.mp3")) + sorted(c.glob("*.wav")):
+        for p in [x for x in sorted(c.glob("*.mp3")) + sorted(c.glob("*.wav")) if not x.name.endswith(".tmp.mp3")]:
             z.write(p, p.name)
     return FileResponse(destino, media_type="application/zip", filename=f"narraciones-{c.name}.zip")
 

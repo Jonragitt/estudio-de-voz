@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Estudio de voz</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="ambient" aria-hidden="true"></div>
+
+<aside class="side glass" id="side">
+  <div class="brand"><span class="logo" aria-hidden="true"></span><b>Estudio de voz</b></div>
+  <nav class="nav" aria-label="Secciones">
+    <button data-view="tts" class="on"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/></svg>Texto a voz</button>
+    <button data-view="voces"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c.8-3.5 3.2-5.5 6-5.5s5.2 2 6 5.5M17 6c1.4 1.2 1.4 4.8 0 6M19.5 4c2.6 2.4 2.6 8.6 0 11"/></svg>Mis voces</button>
+    <button data-view="clonar"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Clonar voz</button>
+    <button data-view="disenar"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16l-1 4zM14 6l3 3"/></svg>Diseñar voz</button>
+    <button data-view="historial"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Historial</button>
+  </nav>
+  <div class="side-foot">
+    <span class="engine" id="engine">Conectando…</span>
+    <button class="theme" id="theme" aria-label="Cambiar tema"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg></button>
+  </div>
+</aside>
+
+<main class="main">
+  <!-- Texto a voz -->
+  <section class="view on" id="v-tts">
+    <header class="head"><h1>Texto a voz</h1><p>Escribe o pega el texto, elige un narrador y genera el audio.</p></header>
+    <div class="tts">
+      <div class="editor glass">
+        <textarea id="text" maxlength="5000" placeholder="Érase una vez, en el Japón de la era Heian…"></textarea>
+        <div class="editor-bar">
+          <span id="count">0 / 5000</span>
+          <button class="btn primary" id="gen"><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Generar</button>
+        </div>
+      </div>
+      <aside class="settings glass">
+        <label class="field"><span>Voz</span><select id="voice"></select></label>
+        <label class="field"><span>Velocidad <output id="o-speed">1.0×</output></span><input type="range" id="speed" min="0.5" max="2" step="0.05" value="1"></label>
+        <label class="field"><span>Expresividad <output id="o-exa">0.50</output></span><input type="range" id="exa" min="0" max="1" step="0.05" value="0.5"></label>
+        <label class="field"><span>Fidelidad al texto <output id="o-cfg">0.50</output></span><input type="range" id="cfg" min="0" max="1" step="0.05" value="0.5"></label>
+        <button class="link" id="reset">Restablecer ajustes</button>
+      </aside>
+    </div>
+    <div class="player glass" id="player" hidden>
+      <div class="pl-info"><b id="pl-voice"></b><span id="pl-text"></span></div>
+      <audio id="audio" controls></audio>
+      <a class="btn" id="pl-dl" download><svg viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>Descargar</a>
+    </div>
+  </section>
+
+  <!-- Mis voces -->
+  <section class="view" id="v-voces">
+    <header class="head"><h1>Mis voces</h1><p>Tus narradores: los del modelo, los clonados y los diseñados.</p></header>
+    <div class="grid" id="voice-grid"></div>
+  </section>
+
+  <!-- Clonar -->
+  <section class="view" id="v-clonar">
+    <header class="head"><h1>Clonar voz</h1><p>Sube una grabación limpia de 10 a 30 segundos. Usa solo tu voz o voces con permiso.</p></header>
+    <form class="card glass form" id="clone-form">
+      <label class="field"><span>Nombre de la voz</span><input name="nombre" required maxlength="60" placeholder="Mi narrador"></label>
+      <label class="drop" id="drop">
+        <input type="file" name="audio" accept="audio/*" required>
+        <svg viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M5 20h14"/></svg>
+        <b>Arrastra el audio aquí</b><span id="drop-name">o pulsa para elegir un archivo (MP3, WAV, M4A)</span>
+      </label>
+      <button class="btn primary">Crear clon rápido</button>
+      <p class="soon">Próximamente: entrenar con muchas grabaciones o con enlaces de vídeo.</p>
+    </form>
+  </section>
+
+  <!-- Diseñar -->
+  <section class="view" id="v-disenar">
+    <header class="head"><h1>Diseñar voz</h1><p>Crea una voz nueva describiéndola, sin grabar a nadie.</p></header>
+    <div class="card glass form">
+      <label class="field"><span>Descripción</span><textarea rows="3" disabled placeholder="Voz de mujer, grave y cálida, ritmo pausado, acento castellano"></textarea></label>
+      <button class="btn primary" disabled>Generar voz</button>
+      <p class="soon">Llega en el paso 4 del plan.</p>
+    </div>
+  </section>
+
+  <!-- Historial -->
+  <section class="view" id="v-historial">
+    <header class="head"><h1>Historial</h1><p>Todos los audios que has generado.</p></header>
+    <ul class="hist" id="hist"></ul>
+  </section>
+</main>
+
+<nav class="tabbar glass" aria-label="Secciones (móvil)" id="tabbar"></nav>
+<div class="toast" id="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>

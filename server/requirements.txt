@@ -1,0 +1,5 @@
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+# Motor real (necesita GPU NVIDIA o Colab/Kaggle). Sin él, la web usa el motor demo.
+# chatterbox-tts

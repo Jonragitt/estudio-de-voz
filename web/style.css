@@ -28,6 +28,7 @@ html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--fg);font:16px/1.4 var(--font);-webkit-font-smoothing:antialiased;
   display:grid;grid-template-columns:248px 1fr;gap:16px;padding:16px;overflow-x:hidden}
 h1,p{margin:0}
+[hidden]{display:none!important}
 button,input,select,textarea{font:inherit;color:inherit}
 button{background:none;border:0;cursor:pointer;padding:0}
 svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}

@@ -1,4 +1,5 @@
 // Estudio de voz · lógica de la web
+const DEMO = !!window.ESTUDIO_DEMO;
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const api = async (path, opts = {}) => {
@@ -63,7 +64,10 @@ $('#voice').onchange = (e) => store.set('voz', e.target.value);
 $('#voice-grid').onclick = async (e) => {
   const use = e.target.closest('[data-use]'), del = e.target.closest('[data-del]');
   if (use) { $('#voice').value = use.dataset.use; store.set('voz', use.dataset.use); show('tts'); }
-  if (del && confirm('¿Borrar esta voz?')) { await api('/voces/' + del.dataset.del, { method: 'DELETE' }); toast('Voz borrada'); loadVoices(); }
+  if (del) {
+    if (!del.dataset.sure) { del.dataset.sure = '1'; del.textContent = '¿Seguro?'; setTimeout(() => { delete del.dataset.sure; del.textContent = 'Borrar'; }, 3000); return; }
+    await api('/voces/' + del.dataset.del, { method: 'DELETE' }); toast('Voz borrada'); loadVoices();
+  }
 };
 
 /* ajustes */
@@ -87,6 +91,7 @@ function play(item) {
   $('#player').hidden = false;
   $('#pl-voice').textContent = item.voice_name;
   $('#pl-text').textContent = item.text;
+  if (DEMO) { window.ESTUDIO_DEMO.speak(item); return; }
   $('#audio').src = '/api/audio/' + item.id;
   $('#pl-dl').href = '/api/audio/' + item.id;
   $('#audio').play().catch(() => {});

@@ -17,7 +17,8 @@ body = body.replace('<script src="app.js"></script>', "")
 banner = ('<div class="preview-note" role="note">Vista previa: la voz es la del navegador. '
           'Las voces de verdad llegan con Chatterbox en el paso 2.</div>')
 body = body.replace('<main class="main">', '<main class="main">' + banner, 1)
-extra = (".preview-note{margin:0 0 14px;padding:10px 14px;border-radius:14px;font-size:14px;"
+extra = (".hist .acts a,#pl-dl{display:none!important}"
+         ".preview-note{margin:0 0 14px;padding:10px 14px;border-radius:14px;font-size:14px;"
          "background:color-mix(in srgb,var(--tint) 12%,transparent);color:var(--fg2)}")
 
 out = (f"<title>Estudio de voz</title>\n<style>\n{css}\n{extra}\n</style>\n{body}\n"

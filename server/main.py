@@ -28,6 +28,7 @@ for d in (AUDIO, VOICES):
 HISTORY = DATA / "historial.json"
 VOICES_DB = DATA / "voces.json"
 PRON_DB = DATA / "pronunciaciones.json"
+AJUSTES = DATA / "ajustes.json"
 
 DEFAULT_VOICES = [
     {"id": "base", "name": "Narrador base", "kind": "base", "tags": ["neutra", "español"],
@@ -55,7 +56,10 @@ def write_json(p: Path, data) -> None:
 
 
 def all_voices() -> list[dict]:
-    return DEFAULT_VOICES + read_json(VOICES_DB, [])
+    propias = read_json(VOICES_DB, [])
+    if propias and read_json(AJUSTES, {}).get("ocultar_base"):
+        return propias
+    return DEFAULT_VOICES + propias
 
 
 class TTSRequest(BaseModel):
@@ -175,6 +179,19 @@ def borrar_voz(vid: str):
                 (VOICES / r).unlink(missing_ok=True)
     write_json(VOICES_DB, keep)
     return {"ok": True}
+
+
+@app.post("/api/voces/{vid}/solo")
+def dejar_solo(vid: str):
+    """Borra el resto de voces (y oculta la del modelo) para dejar solo esta."""
+    db = read_json(VOICES_DB, [])
+    if not any(v["id"] == vid for v in db):
+        raise HTTPException(404, "Esa voz no existe.")
+    for v in db:
+        if v["id"] != vid:
+            borrar_voz(v["id"])
+    write_json(AJUSTES, {**read_json(AJUSTES, {}), "ocultar_base": True})
+    return all_voices()
 
 
 @app.post("/api/voces/disenar")

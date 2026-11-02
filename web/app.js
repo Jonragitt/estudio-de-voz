@@ -55,7 +55,7 @@ async function loadVoices() {
   voices = await api('/voces');
   const sel = $('#voice'), cur = sel.value || store.get('voz', 'base');
   sel.innerHTML = voices.map((v) => `<option value="${v.id}">${esc(v.name)}</option>`).join('');
-  sel.value = voices.some((v) => v.id === cur) ? cur : 'base';
+  sel.value = voices.some((v) => v.id === cur) ? cur : voices[0]?.id;
   $('#voice-grid').innerHTML = voices.map((v) => `
     <article class="vcard glass">
       <div class="av" style="--a:hsl(${hue(v.id)} 80% 62%);--b:hsl(${(hue(v.id) + 60) % 360} 80% 66%)"></div>
@@ -63,7 +63,7 @@ async function loadVoices() {
       <div class="tags">${(v.tags || []).map((t) => `<span>${esc(t)}</span>`).join('')}</div>
       <div class="row">
         <button class="btn" data-use="${v.id}">Usar</button>
-        ${v.kind === 'base' ? '' : `<button class="btn danger" data-del="${v.id}">Borrar</button>`}
+        ${v.kind === 'base' ? '' : `${voices.length > 1 ? `<button class="btn" data-solo="${v.id}">Dejar solo esta</button>` : ''}<button class="btn danger" data-del="${v.id}">Borrar</button>`}
       </div>
     </article>`).join('');
 }
@@ -75,7 +75,11 @@ api('/idiomas').then((l) => {
 }).catch(() => {});
 $('#lang').onchange = (e) => store.set('idioma', e.target.value);
 $('#voice-grid').onclick = async (e) => {
-  const use = e.target.closest('[data-use]'), del = e.target.closest('[data-del]');
+  const use = e.target.closest('[data-use]'), del = e.target.closest('[data-del]'), solo = e.target.closest('[data-solo]');
+  if (solo) {
+    if (!solo.dataset.sure) { solo.dataset.sure = '1'; solo.textContent = '¿Borrar las demás?'; setTimeout(() => { delete solo.dataset.sure; solo.textContent = 'Dejar solo esta'; }, 3000); return; }
+    await api('/voces/' + solo.dataset.solo + '/solo', { method: 'POST' }); store.set('voz', solo.dataset.solo); toast('Ahora solo queda esta voz'); loadVoices();
+  }
   if (use) { $('#voice').value = use.dataset.use; store.set('voz', use.dataset.use); show('tts'); }
   if (del) {
     if (!del.dataset.sure) { del.dataset.sure = '1'; del.textContent = '¿Seguro?'; setTimeout(() => { delete del.dataset.sure; del.textContent = 'Borrar'; }, 3000); return; }

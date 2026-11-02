@@ -28,8 +28,9 @@
       if (!s) { toast('Tu navegador no puede leer en voz alta'); return; }
       s.cancel();
       const u = new SpeechSynthesisUtterance(item.text);
-      u.lang = 'es-ES';
-      const es = s.getVoices().filter((v) => v.lang.startsWith('es'));
+      const lang = item.language || 'es';
+      u.lang = lang;
+      const es = s.getVoices().filter((v) => v.lang.startsWith(lang));
       if (es.length) u.voice = es[[...item.voice_id].reduce((a, c) => a + c.charCodeAt(0), 0) % es.length];
       u.rate = item.speed || 1;
       u.pitch = 0.7 + (item.exaggeration ?? 0.5) * 0.6;
@@ -42,12 +43,13 @@
     if (typeof url !== 'string' || !url.startsWith('/api')) return real(url, opts);
     const path = url.slice(4), method = (opts.method || 'GET').toUpperCase();
     if (path === '/estado') return ok({ motor: 'vista previa', listo: true });
+    if (path === '/idiomas') return ok({ es: 'Español', en: 'Inglés', fr: 'Francés', it: 'Italiano', pt: 'Portugués', de: 'Alemán', ja: 'Japonés' });
     if (path === '/voces' && method === 'GET') return ok(mem.voces);
     if (path === '/historial' && method === 'GET') return ok(mem.historial);
     if (path === '/tts') {
       const b = JSON.parse(opts.body);
       const v = mem.voces.find((x) => x.id === b.voice_id) || mem.voces[0];
-      const item = { id: id(), text: b.text, voice_id: v.id, voice_name: v.name, created: Math.floor(Date.now() / 1000), speed: b.speed, exaggeration: b.exaggeration };
+      const item = { id: id(), text: b.text, voice_id: v.id, voice_name: v.name, created: Math.floor(Date.now() / 1000), speed: b.speed, exaggeration: b.exaggeration, language: b.language };
       mem.historial.unshift(item);
       return ok(item);
     }

@@ -5,6 +5,8 @@ Arranque:  uvicorn server.main:app --reload   (desde la carpeta del proyecto)
 from __future__ import annotations
 
 import json
+import os
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -14,10 +16,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .engine import load_engine
+from .engine import LANGUAGES, load_engine
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "datos"
+DATA = Path(os.getenv("ESTUDIO_DATOS", ROOT / "datos"))  # en Colab: una carpeta de Google Drive
 AUDIO = DATA / "audios"
 VOICES = DATA / "voces"
 for d in (AUDIO, VOICES):
@@ -32,6 +34,7 @@ DEFAULT_VOICES = [
 
 app = FastAPI(title="Estudio de voz")
 engine = None
+gen_lock = threading.Lock()  # la GPU genera un audio cada vez
 
 
 def get_engine():
@@ -59,12 +62,18 @@ class TTSRequest(BaseModel):
     speed: float = Field(1.0, ge=0.5, le=2.0)
     exaggeration: float = Field(0.5, ge=0.0, le=1.0)
     cfg: float = Field(0.5, ge=0.0, le=1.0)
+    language: str = "es"
 
 
 @app.get("/api/estado")
 def estado():
     e = get_engine()
     return {"motor": e.name, "listo": e.ready}
+
+
+@app.get("/api/idiomas")
+def idiomas():
+    return LANGUAGES
 
 
 @app.get("/api/voces")
@@ -109,12 +118,16 @@ def tts(req: TTSRequest):
     if not voice:
         raise HTTPException(404, "No encuentro esa voz.")
     ref = VOICES / voice["ref"] if voice.get("ref") else None
+    if req.language not in LANGUAGES:
+        raise HTTPException(400, "Ese idioma no está disponible.")
     t0 = time.time()
-    wav = get_engine().synthesize(req.text, ref, req.speed, req.exaggeration, req.cfg)
+    with gen_lock:
+        wav = get_engine().synthesize(req.text, ref, req.speed, req.exaggeration, req.cfg, req.language)
     aid = uuid.uuid4().hex[:12]
     (AUDIO / f"{aid}.wav").write_bytes(wav)
     item = {"id": aid, "text": req.text, "voice_id": voice["id"], "voice_name": voice["name"],
-            "created": int(time.time()), "seconds": round(time.time() - t0, 2), "motor": get_engine().name}
+            "created": int(time.time()), "seconds": round(time.time() - t0, 2), "motor": get_engine().name,
+            "language": req.language}
     hist = read_json(HISTORY, [])
     hist.insert(0, item)
     write_json(HISTORY, hist[:500])

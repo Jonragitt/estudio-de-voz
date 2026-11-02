@@ -61,6 +61,12 @@ async function loadVoices() {
     </article>`).join('');
 }
 $('#voice').onchange = (e) => store.set('voz', e.target.value);
+api('/idiomas').then((l) => {
+  const sel = $('#lang');
+  sel.innerHTML = Object.entries(l).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+  sel.value = store.get('idioma', 'es') in l ? store.get('idioma', 'es') : 'es';
+}).catch(() => {});
+$('#lang').onchange = (e) => store.set('idioma', e.target.value);
 $('#voice-grid').onclick = async (e) => {
   const use = e.target.closest('[data-use]'), del = e.target.closest('[data-del]');
   if (use) { $('#voice').value = use.dataset.use; store.set('voz', use.dataset.use); show('tts'); }
@@ -102,7 +108,7 @@ $('#gen').onclick = async () => {
   try {
     const item = await api('/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.value, voice_id: $('#voice').value, speed: +$('#speed').value, exaggeration: +$('#exa').value, cfg: +$('#cfg').value }),
+      body: JSON.stringify({ text: text.value, voice_id: $('#voice').value, speed: +$('#speed').value, exaggeration: +$('#exa').value, cfg: +$('#cfg').value, language: $('#lang').value }),
     });
     play(item);
   } catch (e) { toast(e.message); }

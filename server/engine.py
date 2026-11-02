@@ -1,15 +1,59 @@
 """Motores de voz del Estudio.
 
-- ChatterboxEngine: el motor real (licencia MIT, permite uso comercial). Se usa si está instalado.
-- DemoEngine: genera un tono de prueba para poder usar la web sin GPU ni modelo instalado.
+- ChatterboxEngine: el motor real, Chatterbox Multilingüe de Resemble AI (licencia MIT, permite uso
+  comercial, 23 idiomas incluido el español). Se usa si está instalado y hay GPU (o ESTUDIO_CPU=1).
+- DemoEngine: genera pitidos de prueba para poder usar la web sin GPU ni modelo instalado.
 """
 from __future__ import annotations
 
 import io
 import math
+import os
+import re
 import struct
 import wave
 from pathlib import Path
+
+LANGUAGES = {
+    "es": "Español", "en": "Inglés", "fr": "Francés", "it": "Italiano", "pt": "Portugués",
+    "de": "Alemán", "ja": "Japonés", "zh": "Chino", "ko": "Coreano", "ru": "Ruso", "ar": "Árabe",
+    "nl": "Neerlandés", "pl": "Polaco", "tr": "Turco", "sv": "Sueco", "da": "Danés", "no": "Noruego",
+    "fi": "Finés", "el": "Griego", "he": "Hebreo", "hi": "Hindi", "ms": "Malayo", "sw": "Suajili",
+}
+
+
+def split_text(text: str, limit: int = 280) -> list[str]:
+    """Trocea el texto en frases de como mucho `limit` caracteres (el modelo genera unos 40 s por trozo)."""
+    sentences = re.split(r"(?<=[.!?…;:])\s+|\n+", text.strip())
+    chunks, cur = [], ""
+    for s in filter(None, (x.strip() for x in sentences)):
+        while len(s) > limit:  # frase muy larga: cortar por la última coma o espacio
+            cut = max(s.rfind(",", 0, limit), s.rfind(" ", 0, limit))
+            cut = cut if cut > limit // 3 else limit
+            if cur:
+                chunks.append(cur)
+                cur = ""
+            chunks.append(s[:cut + 1].strip())
+            s = s[cut + 1:].strip()
+        if cur and len(cur) + 1 + len(s) > limit:
+            chunks.append(cur)
+            cur = s
+        else:
+            cur = f"{cur} {s}".strip()
+    if cur:
+        chunks.append(cur)
+    return chunks or [text]
+
+
+def wav_bytes(samples, rate: int) -> bytes:
+    """Convierte muestras float (-1..1) a un WAV de 16 bits."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, float(x))) * 32767)) for x in samples))
+    return buf.getvalue()
 
 
 class DemoEngine:
@@ -17,62 +61,71 @@ class DemoEngine:
     ready = True
 
     def synthesize(self, text: str, ref_audio: Path | None = None, speed: float = 1.0,
-                   exaggeration: float = 0.5, cfg: float = 0.5) -> bytes:
+                   exaggeration: float = 0.5, cfg: float = 0.5, language: str = "es") -> bytes:
         """Devuelve un WAV con un pitido por palabra, para probar la interfaz."""
         rate = 22050
         words = max(1, len(text.split()))
         base = 180 + 220 * exaggeration
-        frames = bytearray()
         beat = int(rate * 0.18 / max(speed, 0.25))
         gap = int(rate * 0.06 / max(speed, 0.25))
+        samples: list[float] = []
         for i in range(min(words, 200)):
             f = base * (1 + 0.12 * math.sin(i))
-            for n in range(beat):
-                env = math.sin(math.pi * n / beat)
-                frames += struct.pack("<h", int(9000 * env * math.sin(2 * math.pi * f * n / rate)))
-            frames += b"\x00\x00" * gap
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(rate)
-            w.writeframes(bytes(frames))
-        return buf.getvalue()
+            samples += [0.27 * math.sin(math.pi * n / beat) * math.sin(2 * math.pi * f * n / rate) for n in range(beat)]
+            samples += [0.0] * gap
+        return wav_bytes(samples, rate)
 
 
 class ChatterboxEngine:
     name = "chatterbox"
 
     def __init__(self) -> None:
-        import torch  # noqa: F401
-        from chatterbox.tts import ChatterboxTTS
+        import torch
+        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
-        import torch as _t
-        device = "cuda" if _t.cuda.is_available() else "cpu"
-        self.model = ChatterboxTTS.from_pretrained(device=device)
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif os.getenv("ESTUDIO_CPU") == "1":
+            device = "cpu"  # funciona, pero muy despacio
+        else:
+            raise RuntimeError("No hay GPU NVIDIA (pon ESTUDIO_CPU=1 para forzar la CPU)")
+        self.model = ChatterboxMultilingualTTS.from_pretrained(device=device)
+        self.sr = self.model.sr
+        self.base_conds = self.model.conds
+        self.cache: dict[str, object] = {}
         self.ready = True
 
-    def synthesize(self, text: str, ref_audio: Path | None = None, speed: float = 1.0,
-                   exaggeration: float = 0.5, cfg: float = 0.5) -> bytes:
-        import torchaudio
+    def _conds_for(self, ref_audio: Path | None, exaggeration: float):
+        if ref_audio is None:
+            return self.base_conds
+        key = str(ref_audio)
+        if key not in self.cache:
+            self.model.prepare_conditionals(str(ref_audio), exaggeration=exaggeration)
+            self.cache[key] = self.model.conds
+        return self.cache[key]
 
-        wav = self.model.generate(
-            text,
-            audio_prompt_path=str(ref_audio) if ref_audio else None,
-            exaggeration=exaggeration,
-            cfg_weight=cfg,
-        )
-        if speed != 1.0:
-            import torchaudio.functional as F
-            wav = F.resample(wav, int(self.model.sr * speed), self.model.sr)
-        buf = io.BytesIO()
-        torchaudio.save(buf, wav, self.model.sr, format="wav")
-        return buf.getvalue()
+    def synthesize(self, text: str, ref_audio: Path | None = None, speed: float = 1.0,
+                   exaggeration: float = 0.5, cfg: float = 0.5, language: str = "es") -> bytes:
+        import numpy as np
+
+        self.model.conds = self._conds_for(ref_audio, exaggeration)
+        pause = np.zeros(int(self.sr * 0.25), dtype=np.float32)
+        parts = []
+        for chunk in split_text(text):
+            wav = self.model.generate(chunk, language_id=language, exaggeration=exaggeration, cfg_weight=cfg)
+            parts += [wav.squeeze(0).cpu().numpy().astype(np.float32), pause]
+        audio = np.concatenate(parts[:-1]) if parts else pause
+        if abs(speed - 1.0) > 0.01:
+            import librosa
+            audio = librosa.effects.time_stretch(audio, rate=speed)  # cambia el ritmo sin cambiar el tono
+        return wav_bytes(audio, self.sr)
 
 
 def load_engine():
+    if os.getenv("ESTUDIO_MOTOR") == "demo":
+        return DemoEngine()
     try:
         return ChatterboxEngine()
     except Exception as e:  # sin GPU, sin modelo o sin dependencias: modo demo
-        print(f"[motor] Chatterbox no disponible ({e.__class__.__name__}); uso el motor demo.")
+        print(f"[motor] Chatterbox no disponible ({e.__class__.__name__}: {e}); uso el motor demo.")
         return DemoEngine()

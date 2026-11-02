@@ -5,7 +5,7 @@ Estudio personal para convertir texto en audio y crear voces propias. Funciona c
 ## Qué hay ahora (paso 1)
 - **Texto a voz:** editor, elección de voz, velocidad, expresividad y fidelidad, reproductor y descarga.
 - **Mis voces:** biblioteca con las voces del modelo y las clonadas.
-- **Clonar voz:** clon rápido subiendo una grabación de 10 a 30 segundos.
+- **Clonar voz:** sube hasta 10 grabaciones o pega enlaces (LibriVox, archive.org, MP3, YouTube, TikTok…). El estudio descarga el audio, quita silencios y saca los mejores recortes.
 - **Diseñar voz:** pantalla preparada (llega en el paso 4).
 - **Historial:** todos los audios generados.
 - Modo claro y oscuro automático, con botón para cambiarlo. Se adapta a móvil.
@@ -36,7 +36,7 @@ Los audios incluyen la marca de agua inaudible de Resemble (Perth), que viene co
 ## Plan
 1. ✅ Base: web y servidor.
 2. ✅ Texto a voz con Chatterbox (Colab/Kaggle, con prueba en el portátil).
-3. Clonar y entrenar voces con muchas grabaciones o enlaces de vídeo.
+3. ✅ Clonar voces con varias grabaciones o enlaces (LibriVox, MP3, vídeos). La huella de la voz se calcula con varios recortes a la vez. Pendiente: entrenamiento completo (ajuste fino) del modelo.
 4. Diseñar voces desde cero.
 
 Usa solo tu voz, voces con permiso o voces diseñadas, sobre todo si vas a usarlas en algo de pago.

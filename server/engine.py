@@ -64,7 +64,7 @@ class DemoEngine:
     name = "demo"
     ready = True
 
-    def synthesize(self, text: str, ref_audio: Path | None = None, speed: float = 1.0,
+    def synthesize(self, text: str, refs: list[Path] | None = None, speed: float = 1.0,
                    exaggeration: float = 0.5, cfg: float = 0.5, language: str = "es") -> bytes:
         """Devuelve un WAV con un pitido por palabra, para probar la interfaz."""
         rate = 22050
@@ -99,20 +99,27 @@ class ChatterboxEngine:
         self.cache: dict[str, object] = {}
         self.ready = True
 
-    def _conds_for(self, ref_audio: Path | None, exaggeration: float):
-        if ref_audio is None:
+    def _conds_for(self, refs: list[Path] | None, exaggeration: float):
+        """Prepara la voz. Con varios recortes, la huella de la voz es la media de todos (más fiel)."""
+        if not refs:
             return self.base_conds
-        key = str(ref_audio)
+        key = "|".join(map(str, refs))
         if key not in self.cache:
-            self.model.prepare_conditionals(str(ref_audio), exaggeration=exaggeration)
+            self.model.prepare_conditionals(str(refs[0]), exaggeration=exaggeration)
+            if len(refs) > 1:
+                import librosa
+                import torch
+                wavs = [librosa.load(str(r), sr=16000)[0] for r in refs]
+                emb = torch.from_numpy(self.model.ve.embeds_from_wavs(wavs, sample_rate=16000))
+                self.model.conds.t3.speaker_emb = emb.mean(axis=0, keepdim=True).to(self.model.device)
             self.cache[key] = self.model.conds
         return self.cache[key]
 
-    def synthesize(self, text: str, ref_audio: Path | None = None, speed: float = 1.0,
+    def synthesize(self, text: str, refs: list[Path] | None = None, speed: float = 1.0,
                    exaggeration: float = 0.5, cfg: float = 0.5, language: str = "es") -> bytes:
         import numpy as np
 
-        self.model.conds = self._conds_for(ref_audio, exaggeration)
+        self.model.conds = self._conds_for(refs, exaggeration)
         pause = np.zeros(int(self.sr * 0.25), dtype=np.float32)
         parts = []
         for chunk in split_text(text):

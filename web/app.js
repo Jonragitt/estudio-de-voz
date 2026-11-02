@@ -123,19 +123,43 @@ $('#gen').onclick = async () => {
 
 /* clonar */
 const drop = $('#drop'), file = $('input[type=file]', drop);
-file.onchange = () => { $('#drop-name').textContent = file.files[0]?.name || 'o pulsa para elegir un archivo'; };
+let cloneMode = 'archivos';
+file.onchange = () => {
+  const n = file.files.length;
+  $('#drop-name').textContent = n ? [...file.files].map((f) => f.name).join(', ') : 'o pulsa para elegir (hasta 10 archivos: MP3, WAV, M4A, MP4)';
+};
 ['dragover', 'dragenter'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('over')));
 drop.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer.files.length) { file.files = e.dataTransfer.files; file.onchange(); } });
+$$('.seg [data-mode]').forEach((b) => b.onclick = () => {
+  cloneMode = b.dataset.mode;
+  $$('.seg [data-mode]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); });
+  $$('#clone-form [data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== cloneMode; });
+});
 $('#clone-form').onsubmit = async (e) => {
   e.preventDefault();
-  const btn = $('button', e.target); btn.classList.add('busy');
+  const f = e.target, btn = $('#clone-btn'), status = $('#clone-status');
+  const nombre = f.nombre.value.trim(), permiso = f.permiso.checked;
+  let req;
+  if (cloneMode === 'archivos') {
+    if (!file.files.length) { toast('Elige al menos una grabación'); return; }
+    const fd = new FormData();
+    fd.append('nombre', nombre); fd.append('permiso', permiso);
+    [...file.files].slice(0, 10).forEach((x) => fd.append('audio', x));
+    req = api('/voces/clonar', { method: 'POST', body: fd });
+  } else {
+    const enlaces = f.enlaces.value.split(/\s+/).filter((x) => x.startsWith('http')).slice(0, 5);
+    if (!enlaces.length) { toast('Pega al menos un enlace'); return; }
+    req = api('/voces/importar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre, enlaces, permiso }) });
+  }
+  btn.classList.add('busy'); btn.textContent = 'Creando voz…';
+  status.textContent = cloneMode === 'enlaces' ? 'Descargando y limpiando el audio. Puede tardar un par de minutos.' : 'Limpiando las grabaciones…';
   try {
-    const v = await api('/voces/clonar', { method: 'POST', body: new FormData(e.target) });
-    toast(`Voz «${v.name}» creada`); e.target.reset(); file.onchange();
+    const v = await req;
+    toast(`Voz «${v.name}» creada`); f.reset(); file.onchange(); status.textContent = '';
     await loadVoices(); $('#voice').value = v.id; store.set('voz', v.id); show('voces');
-  } catch (err) { toast(err.message); }
-  finally { btn.classList.remove('busy'); }
+  } catch (err) { status.textContent = ''; toast(err.message); }
+  finally { btn.classList.remove('busy'); btn.textContent = 'Crear voz'; }
 };
 
 /* historial */

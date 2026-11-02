@@ -60,16 +60,25 @@
 
   <!-- Clonar -->
   <section class="view" id="v-clonar">
-    <header class="head"><h1>Clonar voz</h1><p>Sube una grabación limpia de 10 a 30 segundos. Usa solo tu voz o voces con permiso.</p></header>
+    <header class="head"><h1>Clonar voz</h1><p>Crea una voz con grabaciones o enlaces. Cuantos más minutos de voz limpia, más fiel queda.</p></header>
     <form class="card glass form" id="clone-form">
-      <label class="field"><span>Nombre de la voz</span><input name="nombre" required maxlength="60" placeholder="Mi narrador"></label>
-      <label class="drop" id="drop">
-        <input type="file" name="audio" accept="audio/*" required>
+      <label class="field"><span>Nombre de la voz</span><input name="nombre" required maxlength="60" placeholder="Narrador épico"></label>
+      <div class="seg" role="tablist" aria-label="Origen de la voz">
+        <button type="button" role="tab" data-mode="archivos" class="on" aria-selected="true">Subir grabaciones</button>
+        <button type="button" role="tab" data-mode="enlaces" aria-selected="false">Desde enlaces</button>
+      </div>
+      <label class="drop" id="drop" data-panel="archivos">
+        <input type="file" name="audio" accept="audio/*,video/*" multiple>
         <svg viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M5 20h14"/></svg>
-        <b>Arrastra el audio aquí</b><span id="drop-name">o pulsa para elegir un archivo (MP3, WAV, M4A)</span>
+        <b>Arrastra los audios aquí</b><span id="drop-name">o pulsa para elegir (hasta 10 archivos: MP3, WAV, M4A, MP4)</span>
       </label>
-      <button class="btn primary">Crear clon rápido</button>
-      <p class="soon">Próximamente: entrenar con muchas grabaciones o con enlaces de vídeo.</p>
+      <label class="field" data-panel="enlaces" hidden><span>Enlaces (uno por línea, hasta 5)</span>
+        <textarea name="enlaces" rows="4" placeholder="https://librivox.org/torquemada-en-la-hoguera-by-benito-perez-galdos/&#10;https://archive.org/download/…/capitulo_01_64kb.mp3&#10;https://www.youtube.com/watch?v=…"></textarea>
+        <small class="hint">Páginas de LibriVox o archive.org, MP3 directos o vídeos (YouTube, TikTok…). De LibriVox se cogen los 3 primeros capítulos y se salta la presentación.</small>
+      </label>
+      <label class="check"><input type="checkbox" name="permiso" value="true" required> <span>Confirmo que puedo usar esta voz: es mía, tengo permiso de la persona o es de dominio público.</span></label>
+      <button class="btn primary" id="clone-btn">Crear voz</button>
+      <p class="soon" id="clone-status" role="status"></p>
     </form>
   </section>
 

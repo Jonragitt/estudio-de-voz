@@ -146,3 +146,9 @@ input[type=range]{width:100%;accent-color:var(--tint)}
 }
 
 .demo-note{margin:0 0 14px;padding:10px 14px;border-radius:14px;font-size:14px;background:color-mix(in srgb,#F59E0B 16%,transparent);color:var(--fg)}
+.seg{display:flex;gap:4px;padding:4px;border-radius:999px;background:color-mix(in srgb,var(--fg) 7%,transparent);align-self:flex-start}
+.seg button{padding:8px 16px;border-radius:999px;font-size:14px;font-weight:600;color:var(--fg2)}
+.seg button.on{background:var(--glass2);color:var(--fg);box-shadow:var(--sh)}
+.hint{font-weight:400;color:var(--fg3);font-size:13px}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--fg2)}
+.check input{margin-top:3px;accent-color:var(--tint);width:18px;height:18px;flex:none}

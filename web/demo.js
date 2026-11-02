@@ -53,7 +53,15 @@
       mem.historial.unshift(item);
       return ok(item);
     }
+    if (path === '/voces/importar') {
+      const b = JSON.parse(opts.body);
+      if (!b.permiso) return err(400, 'Marca la casilla confirmando que tienes derecho a usar esta voz.');
+      const v = { id: id(), name: b.nombre, kind: 'importada', tags: ['importada'], description: 'Desde enlace (en la vista previa no se descarga de verdad).' };
+      mem.voces.push(v);
+      return ok(v);
+    }
     if (path === '/voces/clonar') {
+      if (opts.body.get('permiso') !== 'true') return err(400, 'Marca la casilla confirmando que tienes derecho a usar esta voz.');
       const nombre = (opts.body.get('nombre') || '').trim() || 'Voz sin nombre';
       const v = { id: id(), name: nombre, kind: 'clon', tags: ['clonada'], description: 'Clon rápido (en la vista previa no se clona de verdad).' };
       mem.voces.push(v);

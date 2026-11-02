@@ -33,6 +33,13 @@ El motor real es [Chatterbox Multilingüe](https://github.com/resemble-ai/chatte
 
 Los audios incluyen la marca de agua inaudible de Resemble (Perth), que viene con el modelo.
 
+## Narrar lecciones
+
+La pantalla **Narrar lecciones** narra muchos textos seguidos (un MP3 por lección) y los guarda en
+`datos/lotes/` (en Colab, en tu Drive). Si Colab se corta, al volver a abrirlo sigue solo por donde iba.
+Se sube un JSON `{"nombre", "lecciones": [{"id", "titulo", "texto"}]}` y queda guardado en `datos/textos/`.
+Para sacar las lecciones de una página de APUNTY: `python tools/apunty_textos.py apunty.html lecciones.json`.
+
 ## Plan
 1. ✅ Base: web y servidor.
 2. ✅ Texto a voz con Chatterbox (Colab/Kaggle, con prueba en el portátil).

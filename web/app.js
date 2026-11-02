@@ -31,6 +31,7 @@ const show = (v) => {
   if (v === 'voces') loadVoices();
   if (v === 'historial') loadHistory();
   if (v === 'pronunciaciones') loadPron();
+  if (v === 'lote') loadLote();
   history.replaceState(null, '', '#' + v);
 };
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) show(b.dataset.view); });
@@ -220,4 +221,88 @@ async function loadHistory() {
 }
 
 loadVoices().catch(() => {});
+/* narrar lecciones */
+let fuente = null, plantillas = [];
+const ajustesActuales = () => ({ speed: +$('#speed').value, exaggeration: +$('#exa').value, cfg: +$('#cfg').value, pausa: +$('#pausa').value, language: $('#lang').value });
+const mins = (s) => s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : `${Math.max(1, Math.round(s / 60))} min`;
+function pintaFuentes() {
+  $('#lote-fuentes').innerHTML = plantillas.map((p) => `
+    <button type="button" class="fuente ${fuente?.id === p.id ? 'on' : ''}" data-fuente="${esc(p.id)}">
+      <b>${esc(p.nombre)}</b><span>${p.lecciones} lecciones · ≈ ${mins(p.palabras / 140 * 60)} de audio</span>
+    </button>`).join('') || '<p class="soon">Aún no hay textos: sube un JSON de lecciones.</p>';
+}
+async function loadLote() {
+  const a = ajustesActuales();
+  $('#lote-ajustes').textContent = `Se usan tus ajustes de Texto a voz: velocidad ${a.speed.toFixed(2)}×, expresividad ${a.exaggeration.toFixed(2)}, ritmo ${a.cfg.toFixed(2)}, pausas ${a.pausa.toFixed(1)}×.`;
+  if (!$('#voice').options.length) await loadVoices().catch(() => {});
+  const sel = $('#lote-voice');
+  sel.innerHTML = $('#voice').innerHTML; sel.value = $('#voice').value;
+  try { plantillas = await api('/lotes/plantillas'); } catch { plantillas = []; }
+  if (!fuente && plantillas[0]) fuente = { id: plantillas[0].id, nombre: plantillas[0].nombre };
+  pintaFuentes();
+  refrescaLotes();
+}
+$('#lote-fuentes').onclick = (e) => {
+  const b = e.target.closest('[data-fuente]'); if (!b) return;
+  const p = plantillas.find((x) => x.id === b.dataset.fuente); fuente = { id: p.id, nombre: p.nombre }; pintaFuentes();
+};
+$('#lote-file').onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const datos = JSON.parse(await f.text());
+    if (!Array.isArray(datos.lecciones) || !datos.lecciones.length) throw new Error();
+    if (!datos.nombre) datos.nombre = f.name.replace(/\.json$/, '');
+    const p = await api('/lotes/plantillas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) });
+    plantillas = await api('/lotes/plantillas'); fuente = { id: p.id, nombre: p.nombre }; pintaFuentes();
+    toast('Textos guardados: ya puedes narrarlos');
+  } catch (err) { toast(err.message && err.message !== 'Algo ha fallado' ? err.message : 'Ese archivo no tiene lecciones (hace falta {"lecciones": [{"id", "titulo", "texto"}]})'); }
+};
+$('#lote-form').onsubmit = async (e) => {
+  e.preventDefault();
+  if (!fuente) return toast('Elige qué textos narrar');
+  const btn = $('#lote-start'); btn.classList.add('busy');
+  try {
+    const datos = await api('/lotes/plantillas/' + encodeURIComponent(fuente.id));
+    const lecciones = datos.lecciones.map((l) => ({ id: String(l.id), titulo: l.titulo || '', texto: l.texto }));
+    await api('/lotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre: fuente.nombre, voice_id: $('#lote-voice').value, ...ajustesActuales(), lecciones }) });
+    toast('Narrando… puedes dejarlo trabajando'); refrescaLotes();
+  } catch (err) { toast(err.message); } finally { btn.classList.remove('busy'); }
+};
+const abiertos = new Set(store.get('lotes-abiertos', []));
+async function refrescaLotes() {
+  clearTimeout(refrescaLotes.t);
+  let ls = [];
+  try { ls = await api('/lotes'); } catch { return; }
+  $('#lotes').innerHTML = ls.map((l) => {
+    const pct = Math.round(100 * l.hechas / Math.max(1, l.total));
+    const dur = l.lecciones.reduce((a, x) => a + (x.segundos || 0), 0);
+    const est = { 'en curso': 'Narrando', pausado: 'En pausa', terminado: 'Terminado' }[l.estado];
+    return `<li class="lote glass" data-lote="${l.id}">
+      <div class="lote-h"><b>${esc(l.nombre)}</b><span class="pill ${l.estado.replace(' ', '-')}">${est}</span></div>
+      <div class="m">${esc(l.voice_name || '')} · ${l.hechas} de ${l.total} lecciones${dur ? ' · ' + mins(dur) + ' de audio' : ''}</div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      ${l.error ? `<p class="err">Se paró en ${esc(l.error)}</p>` : ''}
+      <div class="row-btns">
+        ${l.estado === 'en curso' ? `<button class="btn" data-acc="pausar">Pausar</button>` : l.estado === 'pausado' ? `<button class="btn primary" data-acc="continuar">Continuar</button>` : ''}
+        ${l.hechas ? `<a class="btn" href="/api/lotes/${l.id}/zip" download>Descargar todo (ZIP)</a>` : ''}
+        <button class="btn" data-acc="ver">${abiertos.has(l.id) ? 'Ocultar lecciones' : 'Ver lecciones'}</button>
+        <button class="btn danger" data-acc="borrar">Borrar</button>
+      </div>
+      ${abiertos.has(l.id) ? `<ol class="lecs">${l.lecciones.map((x) => `<li class="${x.lista ? 'ok' : ''}"><span>${esc(x.titulo || x.id)}</span>${x.lista ? `<audio controls preload="none" src="/api/lotes/${l.id}/audio/${encodeURIComponent(x.id)}"></audio>` : '<small>pendiente</small>'}</li>`).join('')}</ol>` : ''}
+    </li>`;
+  }).join('');
+  if (ls.some((l) => l.estado === 'en curso') && $('#v-lote').classList.contains('on')) refrescaLotes.t = setTimeout(refrescaLotes, 8000);
+}
+$('#lotes').onclick = async (e) => {
+  const b = e.target.closest('[data-acc]'); if (!b) return;
+  const id = b.closest('[data-lote]').dataset.lote, acc = b.dataset.acc;
+  if (acc === 'ver') { abiertos.has(id) ? abiertos.delete(id) : abiertos.add(id); store.set('lotes-abiertos', [...abiertos]); return refrescaLotes(); }
+  if (acc === 'borrar') {
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '¿Borrar los audios?'; setTimeout(() => { delete b.dataset.sure; b.textContent = 'Borrar'; }, 3000); return; }
+    await api('/lotes/' + id, { method: 'DELETE' }); return refrescaLotes();
+  }
+  try { await api(`/lotes/${id}/${acc}`, { method: 'POST' }); } catch (err) { toast(err.message); }
+  refrescaLotes();
+};
+
 show(location.hash.slice(1) || 'tts');

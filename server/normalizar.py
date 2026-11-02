@@ -121,9 +121,34 @@ def aplicar_pronunciaciones(t: str, diccionario: list[dict] | None) -> str:
     return t
 
 
+_ORD_U = ["", "primer", "segund", "tercer", "cuart", "quint", "sext", "séptim", "octav", "noven"]
+_ORD_D = ["", "décim", "vigésim", "trigésim", "cuadragésim", "quincuagésim", "sexagésim", "septuagésim",
+          "octogésim", "nonagésim"]
+
+
+def ordinal(n: int, femenino: bool = False) -> str:
+    """4 → «cuarto», 62 (fem.) → «sexagésima segunda». Más allá de 99, «número n»."""
+    if not 0 < n < 100:
+        return f"número {numero(n)}"
+    o = "a" if femenino else "o"
+    d, u = divmod(n, 10)
+    partes = [_ORD_D[d] + o if d else "", _ORD_U[u] + o if u else ""]
+    return " ".join(p for p in partes if p)
+
+
 def normalizar(texto: str, idioma: str = "es", diccionario: list[dict] | None = None) -> str:
-    """Devuelve el texto listo para leer en voz alta."""
-    t = aplicar_pronunciaciones(texto.translate(VOCALES_LARGAS), diccionario)
+    """Devuelve el texto listo para leer en voz alta. Respeta los saltos de párrafo."""
+    partes = [p for p in re.split(r"\s*\n\s*", texto.strip()) if p.strip()]
+    return "\n\n".join(_normalizar(p, idioma, diccionario) for p in partes) if len(partes) > 1 \
+        else _normalizar(texto, idioma, diccionario)
+
+
+def _normalizar(texto: str, idioma: str = "es", diccionario: list[dict] | None = None) -> str:
+    t = aplicar_pronunciaciones(texto, diccionario)  # primero el diccionario del usuario (manda él)
+    if idioma == "es":
+        from .japones import aplicar as japones
+        t = japones(t)
+    t = aplicar_pronunciaciones(t.translate(VOCALES_LARGAS), diccionario)
     if idioma != "es":
         return re.sub(r"\s+", " ", t).strip()
 
@@ -148,6 +173,9 @@ def normalizar(texto: str, idioma: str = "es", diccionario: list[dict] | None = 
     t = re.sub(r"(?<![\d,])(\d{1,3})((?:[    .]\d{3})+)(?!\d|,\d)",
                lambda m: m.group(1) + re.sub(r"\D", "", m.group(2)), t)
 
+    # ordinales: «4.ª» → «cuarta», «26.º» → «vigésimo sexto»
+    t = re.sub(r"\b(\d{1,3})\.?\s?([ªº])", lambda m: ordinal(int(m.group(1)), m.group(2) == "ª"), t)
+
     # porcentajes
     t = re.sub(r"(\d+(?:,\d+)?)\s*%", r"\1 por ciento", t)
 
@@ -169,6 +197,8 @@ def normalizar(texto: str, idioma: str = "es", diccionario: list[dict] | None = 
     t = re.sub(r"\b\d+\b", lambda m: numero(int(m.group(0))) if len(m.group(0)) <= 15 else m.group(0), t)
     t = re.sub(r"\buno (?=(kilómetro|metro|kilo|euro|grado|hora|gramo|tonelada|dólar|yen|centímetro|milímetro|millón|por ciento))", "un ", t)
     t = re.sub(r"\bveintiuno (kilómetros|metros|kilos|euros|grados|horas)", r"veintiún \1", t)
+
+    t = re.sub(r"(?<=\w)\s*/\s*(?=\w)", " o ", t)
 
     # limpieza de puntuación
     t = re.sub(r"\s+", " ", t)

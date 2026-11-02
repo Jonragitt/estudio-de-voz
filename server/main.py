@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -272,6 +273,223 @@ def audio(aid: str):
     if not p.exists():
         raise HTTPException(404, "Audio no encontrado.")
     return FileResponse(p, media_type="audio/wav", filename=f"estudio-{aid}.wav")
+
+
+# ---------- Narrar lecciones (lotes) ----------
+# Un lote es una lista de lecciones que se narran una a una en segundo plano. Cada lección se guarda
+# como MP3 en cuanto termina, así que si Colab se corta basta con volver a abrirlo: sigue por donde iba.
+LOTES = DATA / "lotes"
+PLANTILLAS = DATA / "textos"  # textos listos para narrar que se suben desde la web (p. ej. las lecciones de APUNTY)
+lote_hilo: threading.Thread | None = None
+
+
+class Leccion(BaseModel):
+    id: str = Field(pattern=r"^[\w\-]{1,60}$")
+    titulo: str = ""
+    texto: str = Field(min_length=1, max_length=60000)
+
+
+class LoteRequest(BaseModel):
+    nombre: str = Field(min_length=1, max_length=80)
+    voice_id: str
+    speed: float = Field(0.95, ge=0.5, le=2.0)
+    exaggeration: float = Field(0.35, ge=0.0, le=1.0)
+    cfg: float = Field(0.3, ge=0.0, le=1.0)
+    pausa: float = Field(1.4, ge=0.3, le=3.0)
+    language: str = "es"
+    lecciones: list[Leccion] = Field(min_length=1, max_length=300)
+
+
+def a_mp3(wav: bytes, destino: Path) -> None:
+    import shutil
+    import subprocess
+    if not shutil.which("ffmpeg"):
+        destino.with_suffix(".wav").write_bytes(wav)
+        return
+    tmp = destino.with_suffix(".tmp.mp3")
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "wav", "-i", "pipe:0", "-ac", "1", "-ar", "24000",
+                    "-b:a", "64k", str(tmp)], input=wav, check=True)
+    tmp.replace(destino)  # solo aparece completo: un corte no deja un MP3 a medias
+
+
+def _hecha(carpeta: Path, lid: str) -> Path | None:
+    return next((p for p in (carpeta / f"{lid}.mp3", carpeta / f"{lid}.wav") if p.exists()), None)
+
+
+def _estado_lote(carpeta: Path) -> dict:
+    lote = read_json(carpeta / "lote.json", {})
+    hechas = [l["id"] for l in lote.get("lecciones", []) if _hecha(carpeta, l["id"])]
+    info = {k: v for k, v in lote.items() if k != "lecciones"}
+    info["lecciones"] = [{"id": l["id"], "titulo": l.get("titulo", ""), "lista": l["id"] in hechas,
+                          "segundos": lote.get("duraciones", {}).get(l["id"])} for l in lote.get("lecciones", [])]
+    info["hechas"], info["total"] = len(hechas), len(lote.get("lecciones", []))
+    hilo_vivo = lote_hilo is not None and lote_hilo.is_alive()
+    if info["hechas"] == info["total"]:
+        info["estado"] = "terminado"
+    elif hilo_vivo and lote.get("estado") == "en curso":
+        info["estado"] = "en curso"
+    else:
+        info["estado"] = "pausado"
+    return info
+
+
+def _trabajar() -> None:
+    """Narra, de una en una, las lecciones pendientes de todos los lotes en curso."""
+    while True:
+        pendiente = None
+        for lote_json in sorted(LOTES.glob("*/lote.json")):
+            lote = read_json(lote_json, {})
+            if lote.get("estado") != "en curso":
+                continue
+            for l in lote["lecciones"]:
+                if not _hecha(lote_json.parent, l["id"]):
+                    pendiente = (lote_json, lote, l)
+                    break
+            if pendiente:
+                break
+        if not pendiente:
+            return
+        lote_json, lote, l = pendiente
+        voice = next((v for v in all_voices() if v["id"] == lote["voice_id"]), None)
+        refs = [VOICES / r for r in voice.get("refs", [voice["ref"]] if voice.get("ref") else [])] if voice else []
+        try:
+            leido = normalizar(l["texto"], lote["language"], pronunciaciones_actuales())
+            t0 = time.time()
+            with gen_lock:
+                wav = get_engine().synthesize(leido, refs or None, lote["speed"], lote["exaggeration"], lote["cfg"],
+                                              lote["language"], lote["pausa"])
+            a_mp3(wav, lote_json.parent / f"{l['id']}.mp3")
+            import wave, io
+            with wave.open(io.BytesIO(wav)) as w:
+                dur = round(w.getnframes() / w.getframerate(), 1)
+            lote = read_json(lote_json, lote)
+            lote.setdefault("duraciones", {})[l["id"]] = dur
+            lote.setdefault("tiempos", {})[l["id"]] = round(time.time() - t0, 1)
+            lote.pop("error", None)
+            if all(_hecha(lote_json.parent, x["id"]) for x in lote["lecciones"]):
+                lote["estado"] = "terminado"
+            write_json(lote_json, lote)
+        except Exception as e:  # se pausa el lote y se cuenta el fallo; «Continuar» lo reintenta
+            lote = read_json(lote_json, lote)
+            lote["estado"], lote["error"] = "pausado", f"{l.get('titulo') or l['id']}: {e.__class__.__name__}: {e}"
+            write_json(lote_json, lote)
+
+
+def _arrancar_trabajo() -> None:
+    global lote_hilo
+    if lote_hilo is None or not lote_hilo.is_alive():
+        lote_hilo = threading.Thread(target=_trabajar, daemon=True)
+        lote_hilo.start()
+
+
+@app.on_event("startup")
+def _reanudar_lotes() -> None:
+    LOTES.mkdir(parents=True, exist_ok=True)
+    if any(read_json(p, {}).get("estado") == "en curso" for p in LOTES.glob("*/lote.json")):
+        _arrancar_trabajo()  # Colab se cortó a mitad: seguir solo
+
+
+@app.get("/api/lotes/plantillas")
+def plantillas():
+    out = []
+    for p in sorted(PLANTILLAS.glob("*.json")):
+        d = read_json(p, {})
+        out.append({"id": p.stem, "nombre": d.get("nombre", p.stem), "lecciones": len(d.get("lecciones", [])),
+                    "palabras": sum(len(l["texto"].split()) for l in d.get("lecciones", []))})
+    return out
+
+
+@app.post("/api/lotes/plantillas")
+def guardar_plantilla(datos: dict):
+    """Guarda en tus datos un JSON de lecciones subido, para poder volver a narrarlo sin subirlo otra vez."""
+    lecciones = [Leccion(**l).model_dump() for l in datos.get("lecciones", [])][:300]
+    if not lecciones:
+        raise HTTPException(400, "Ese archivo no tiene lecciones.")
+    nombre = str(datos.get("nombre") or "Lecciones")[:80]
+    pid = re.sub(r"[^\w\-]+", "-", nombre.lower()).strip("-")[:40] or uuid.uuid4().hex[:8]
+    PLANTILLAS.mkdir(parents=True, exist_ok=True)
+    write_json(PLANTILLAS / f"{pid}.json", {"nombre": nombre, "lecciones": lecciones})
+    return {"id": pid, "nombre": nombre}
+
+
+@app.get("/api/lotes/plantillas/{pid}")
+def plantilla(pid: str):
+    p = PLANTILLAS / f"{Path(pid).name}.json"
+    if not p.exists():
+        raise HTTPException(404, "No encuentro esos textos.")
+    return read_json(p, {})
+
+
+@app.get("/api/lotes")
+def lotes():
+    LOTES.mkdir(parents=True, exist_ok=True)
+    return [_estado_lote(p.parent) for p in sorted(LOTES.glob("*/lote.json"), reverse=True)]
+
+
+@app.post("/api/lotes")
+def crear_lote(req: LoteRequest):
+    if not any(v["id"] == req.voice_id for v in all_voices()):
+        raise HTTPException(404, "No encuentro esa voz.")
+    if len({l.id for l in req.lecciones}) != len(req.lecciones):
+        raise HTTPException(400, "Hay lecciones con el mismo id.")
+    lid = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
+    carpeta = LOTES / lid
+    carpeta.mkdir(parents=True)
+    voz = next(v for v in all_voices() if v["id"] == req.voice_id)
+    write_json(carpeta / "lote.json", {**req.model_dump(), "id": lid, "voice_name": voz["name"],
+                                       "creado": int(time.time()), "estado": "en curso"})
+    _arrancar_trabajo()
+    return _estado_lote(carpeta)
+
+
+def _carpeta_lote(lid: str) -> Path:
+    c = LOTES / Path(lid).name
+    if not (c / "lote.json").exists():
+        raise HTTPException(404, "Ese lote no existe.")
+    return c
+
+
+@app.post("/api/lotes/{lid}/{accion}")
+def mover_lote(lid: str, accion: str):
+    c = _carpeta_lote(lid)
+    lote = read_json(c / "lote.json", {})
+    if accion == "continuar":
+        lote["estado"] = "en curso"
+        lote.pop("error", None)
+    elif accion == "pausar":
+        lote["estado"] = "pausado"  # termina la lección que está narrando y para
+    else:
+        raise HTTPException(404, "Acción desconocida.")
+    write_json(c / "lote.json", lote)
+    if accion == "continuar":
+        _arrancar_trabajo()
+    return _estado_lote(c)
+
+
+@app.delete("/api/lotes/{lid}")
+def borrar_lote(lid: str):
+    import shutil
+    shutil.rmtree(_carpeta_lote(lid))
+    return {"ok": True}
+
+
+@app.get("/api/lotes/{lid}/audio/{leccion}")
+def audio_lote(lid: str, leccion: str):
+    p = _hecha(_carpeta_lote(lid), Path(leccion).name)
+    if not p:
+        raise HTTPException(404, "Esa lección aún no está narrada.")
+    return FileResponse(p, media_type="audio/mpeg" if p.suffix == ".mp3" else "audio/wav", filename=p.name)
+
+
+@app.get("/api/lotes/{lid}/zip")
+def zip_lote(lid: str):
+    import zipfile
+    c = _carpeta_lote(lid)
+    destino = c / f"{c.name}.zip"
+    with zipfile.ZipFile(destino, "w", zipfile.ZIP_STORED) as z:  # los MP3 ya van comprimidos
+        for p in sorted(c.glob("*.mp3")) + sorted(c.glob("*.wav")):
+            z.write(p, p.name)
+    return FileResponse(destino, media_type="application/zip", filename=f"narraciones-{c.name}.zip")
 
 
 app.mount("/", StaticFiles(directory=ROOT / "web", html=True), name="web")

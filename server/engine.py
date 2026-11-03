@@ -39,6 +39,14 @@ def frases(text: str, limit: int = 220) -> list[tuple[str, float]]:
     out: list[tuple[str, float]] = []
     for parrafo in [p.strip() for p in re.split(r"\n\s*\n|\n", text.strip()) if p.strip()]:
         partes = [x.strip() for x in re.split(r"(?<=[.!?…;:])\s+", parrafo) if x.strip()]
+        # frases muy cortas («¿Por qué?», «Clave.») se unen a la siguiente: sueltas, el modelo a veces falla
+        juntas: list[str] = []
+        for x in partes:
+            if juntas and len(juntas[-1]) < 16 and len(juntas[-1]) + len(x) < limit:
+                juntas[-1] = juntas[-1] + " " + x
+            else:
+                juntas.append(x)
+        partes = juntas
         for i, frase in enumerate(partes):
             while len(frase) > limit:  # frase muy larga: cortar por la última coma (o espacio)
                 cut = frase.rfind(",", 0, limit)
@@ -161,7 +169,15 @@ class ChatterboxEngine:
         self.model.conds = self._conds_for(refs, exaggeration)
         parts = []
         for frase, silencio in frases(text):
-            wav = self.model.generate(frase, language_id=language, exaggeration=exaggeration, cfg_weight=cfg)
+            wav = None
+            for intento in (frase, frase + " …", frase.rstrip(".!?…;:") + "."):
+                try:  # el modelo falla a veces con alguna frase concreta (IndexError interno): se reintenta
+                    wav = self.model.generate(intento, language_id=language, exaggeration=exaggeration, cfg_weight=cfg)
+                    break
+                except (IndexError, RuntimeError) as e:
+                    print(f"[motor] reintento por {e.__class__.__name__} en: {frase[:60]!r}", flush=True)
+            if wav is None:
+                continue  # se salta la frase antes que perder toda la lección
             voz = recortar_silencio(wav.squeeze(0).cpu().numpy().astype(np.float32), self.sr)
             voz = cambiar_ritmo(voz, self.sr, speed)
             # las pausas se alargan cuando el narrador va más lento

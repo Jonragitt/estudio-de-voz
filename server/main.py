@@ -352,6 +352,12 @@ def _trabajar() -> None:
         lote_json, lote, l = pendiente
         voice = next((v for v in all_voices() if v["id"] == lote["voice_id"]), None)
         refs = [VOICES / r for r in voice.get("refs", [voice["ref"]] if voice.get("ref") else [])] if voice else []
+        if get_engine().name == "demo" and os.getenv("ESTUDIO_MOTOR") != "demo":
+            # sin la voz de verdad (Colab sin GPU o el modelo no cargó): no se graban pitidos
+            lote = read_json(lote_json, lote)
+            lote["estado"], lote["error"] = "pausado", "el motor de voz no está listo (modo demo). Vuelve a ejecutar Colab con GPU y pulsa Continuar."
+            write_json(lote_json, lote)
+            continue
         try:
             leido = normalizar(l["texto"], lote["language"], pronunciaciones_actuales())
             t0 = time.time()

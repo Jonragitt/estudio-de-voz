@@ -74,8 +74,8 @@ def main(entrada: str, salida: str) -> None:
     lecciones = []
     for p in paises:
         for c in p.get("chapters", []):
-            m = re.match(r"t(\d+)c(\d+)", c["id"])
-            temporada, num = (int(m[1]), int(m[2])) if m else (1, int(c["id"][1:]))
+            m = re.match(r"t(\d+)c(\d+)$", c["id"])
+            temporada, num = (int(m[1]), int(m[2])) if m else (1, int(re.sub(r"\D", "", c["id"]) or 0))
             lecciones.append({"id": f"{p['id']}-{c['id']}", "pais": p["id"], "capitulo": c["id"],
                               "temporada": temporada, "numero": num, "titulo": c["t"], "texto": capitulo(c["html"])})
     json.dump({"lecciones": lecciones}, open(salida, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

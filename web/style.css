@@ -153,6 +153,9 @@ input[type=range]{width:100%;accent-color:var(--tint)}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--fg2)}
 .check input{margin-top:3px;accent-color:var(--tint);width:18px;height:18px;flex:none}
 .bar-left{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.bar-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.btn.live-on{box-shadow:0 0 0 2px var(--tint),var(--sh)}
+.btn.live-on.wait{opacity:.75}
 .leido{padding:16px 20px;margin-top:16px;display:flex;flex-direction:column;gap:8px}
 .leido-head{display:flex;justify-content:space-between;align-items:center}
 .leido p{color:var(--fg);line-height:1.55}

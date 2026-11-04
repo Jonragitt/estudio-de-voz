@@ -3,3 +3,6 @@ uvicorn>=0.29
 python-multipart>=0.0.9
 # Motor real: se instala en Colab (ver colab/EstudioDeVoz.ipynb). Sin él, la web usa el motor demo.
 # chatterbox-tts
+kaggle>=1.7  # para encender la GPU de Kaggle desde el portátil (tools/arrancar.py)
+six  # la CLI de Kaggle lo necesita y no lo instala sola
+imageio-ffmpeg  # ffmpeg para guardar MP3 en Windows

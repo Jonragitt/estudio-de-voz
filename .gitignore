@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 datos/
 dist/
+datos_demo_antiguo/
+tools/bin/

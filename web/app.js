@@ -37,8 +37,14 @@ const show = (v) => {
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) show(b.dataset.view); });
 
 /* estado del motor */
-api('/estado').then((s) => {
+const estadoMotor = () => api('/estado').then((s) => {
   const el = $('#engine');
+  if (s.motor === 'kaggle') {
+    el.textContent = s.listo ? 'GPU de Kaggle lista' : 'Encendiendo la GPU de Kaggle…';
+    el.className = 'engine ' + (s.listo ? 'ok' : 'demo');
+    setTimeout(estadoMotor, s.listo ? 60000 : 15000);
+    return;
+  }
   el.textContent = s.motor === 'demo' ? 'Motor demo (sin GPU)' : 'Motor: ' + s.motor;
   if (s.motor === 'demo') {
     const n = document.createElement('div');
@@ -48,6 +54,7 @@ api('/estado').then((s) => {
   }
   el.className = 'engine ' + (s.motor === 'demo' ? 'demo' : 'ok');
 }).catch(() => { $('#engine').textContent = 'Servidor apagado'; });
+estadoMotor();
 
 /* voces */
 let voices = [];
@@ -109,7 +116,7 @@ const count = () => { $('#count').textContent = `${text.value.length} / 5000`; s
 text.oninput = count; count();
 
 function play(item) {
-  $('#player').hidden = false;
+  $('#player').hidden = false; $('#audio').hidden = false; $('#pl-dl').hidden = false;
   $('#pl-voice').textContent = item.voice_name;
   $('#pl-text').textContent = item.text;
   if (DEMO) { window.ESTUDIO_DEMO.speak(item); return; }
@@ -128,6 +135,51 @@ $('#gen').onclick = async () => {
     play(item);
   } catch (e) { toast(e.message); }
   finally { btn.classList.remove('busy'); btn.lastChild.textContent = 'Generar'; }
+};
+
+/* leer en directo: va sonando frase a frase mientras la GPU prepara las siguientes; no guarda nada */
+let directo = null;
+$('#live').onclick = async () => {
+  if (directo) { directo.parar(); return; }
+  if (!text.value.trim()) { toast('Escribe algún texto primero'); text.focus(); return; }
+  const ajustes = { voice_id: $('#voice').value, speed: +$('#speed').value, exaggeration: +$('#exa').value, cfg: +$('#cfg').value, pausa: +$('#pausa').value, language: $('#lang').value };
+  if (DEMO) { window.ESTUDIO_DEMO.speak({ ...ajustes, text: text.value }); return; }
+  const btn = $('#live'), audio = new Audio();
+  let frases;
+  try {
+    frases = await api('/directo/frases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ajustes, text: text.value }) });
+  } catch (e) { toast(e.message); return; }
+  const yo = { parado: false };
+  directo = yo;
+  btn.classList.add('live-on'); btn.lastChild.textContent = 'Parar';
+  yo.parar = () => { yo.parado = true; audio.pause(); };
+  $('#player').hidden = false; $('#audio').hidden = true; $('#pl-dl').hidden = true;
+  $('#pl-voice').textContent = $('#voice').selectedOptions[0]?.textContent + ' · en directo';
+  const pedir = async (f) => {
+    const r = await fetch('/api/directo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ajustes, text: f.texto }) });
+    if (!r.ok) { let m = 'Algo ha fallado'; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+    return URL.createObjectURL(await r.blob());
+  };
+  // las frases se piden en cadena (la GPU hace una cada vez), adelantándose a lo que está sonando
+  let cadena = Promise.resolve();
+  const urls = frases.map((f) => (cadena = cadena.then(() => (yo.parado ? null : pedir(f)))));
+  urls.forEach((u) => u.catch(() => {}));
+  try {
+    for (let i = 0; i < frases.length && !yo.parado; i++) {
+      $('#pl-text').textContent = frases[i].texto;
+      btn.classList.add('wait');
+      const url = await urls[i];
+      btn.classList.remove('wait');
+      if (yo.parado || !url) break;
+      audio.src = url;
+      await new Promise((ok) => { audio.onended = ok; audio.onpause = ok; audio.play().catch(ok); });
+      URL.revokeObjectURL(url);
+      if (!yo.parado) await new Promise((ok) => setTimeout(ok, frases[i].pausa * 1000));
+    }
+  } catch (e) { toast(e.message); }
+  yo.parado = true;
+  if (directo === yo) directo = null;
+  btn.classList.remove('live-on', 'wait'); btn.lastChild.textContent = 'Leer en directo';
 };
 
 /* clonar */

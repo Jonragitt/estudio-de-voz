@@ -13,12 +13,13 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .engine import LANGUAGES, load_engine
+from .engine import LANGUAGES, frases, load_engine
 from .normalizar import PRONUNCIACIONES_INICIALES, normalizar
+from .remoto import activar
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.getenv("ESTUDIO_DATOS", ROOT / "datos"))  # en Colab: una carpeta de Google Drive
@@ -37,7 +38,7 @@ DEFAULT_VOICES = [
 ]
 
 app = FastAPI(title="Estudio de voz")
-engine = None
+engine = activar(VOICES)  # con ESTUDIO_MOTOR=kaggle, la voz se genera en Kaggle
 gen_lock = threading.Lock()  # la GPU genera un audio cada vez
 
 
@@ -223,6 +224,25 @@ def tts(req: TTSRequest):
     return item
 
 
+@app.post("/api/directo/frases")
+def directo_frases(req: TTSRequest):
+    """Leer en directo: el texto ya preparado para leer, partido en frases con su pausa."""
+    leido = normalizar(req.text, req.language, pronunciaciones_actuales())
+    return [{"texto": f, "pausa": round(p * req.pausa / max(req.speed, 0.5), 2)} for f, p in frases(leido)]
+
+
+@app.post("/api/directo")
+def directo(req: TTSRequest):
+    """Leer en directo: genera una frase (ya preparada) y la devuelve sin guardarla en el historial."""
+    voice = next((v for v in all_voices() if v["id"] == req.voice_id), None)
+    if not voice:
+        raise HTTPException(404, "No encuentro esa voz.")
+    refs = [VOICES / r for r in voice.get("refs", [voice["ref"]] if voice.get("ref") else [])]
+    with gen_lock:
+        wav = get_engine().synthesize(req.text, refs or None, req.speed, req.exaggeration, req.cfg, req.language, req.pausa)
+    return Response(wav, media_type="audio/wav")
+
+
 def pronunciaciones_actuales() -> list[dict]:
     return read_json(PRON_DB, PRONUNCIACIONES_INICIALES)
 
@@ -303,11 +323,16 @@ class LoteRequest(BaseModel):
 def a_mp3(wav: bytes, destino: Path) -> None:
     import shutil
     import subprocess
-    if not shutil.which("ffmpeg"):
-        destino.with_suffix(".wav").write_bytes(wav)
-        return
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        try:  # en Windows no suele haber ffmpeg: imageio-ffmpeg trae uno
+            import imageio_ffmpeg
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            destino.with_suffix(".wav").write_bytes(wav)
+            return
     tmp = destino.with_suffix(".tmp.mp3")
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "wav", "-i", "pipe:0", "-ac", "1", "-ar", "24000",
+    subprocess.run([ffmpeg, "-loglevel", "error", "-y", "-f", "wav", "-i", "pipe:0", "-ac", "1", "-ar", "24000",
                     "-b:a", "64k", str(tmp)], input=wav, check=True)
     tmp.replace(destino)  # solo aparece completo: un corte no deja un MP3 a medias
 
@@ -358,6 +383,8 @@ def _trabajar() -> None:
             lote["estado"], lote["error"] = "pausado", "el motor de voz no está listo (modo demo). Vuelve a ejecutar Colab con GPU y pulsa Continuar."
             write_json(lote_json, lote)
             continue
+        while not get_engine().ready:  # la GPU de Kaggle aún se enciende: esperar en vez de fallar
+            time.sleep(10)
         try:
             leido = normalizar(l["texto"], lote["language"], pronunciaciones_actuales())
             t0 = time.time()
